@@ -4,7 +4,9 @@
 #include "mpc.h"
 
 // Valid lval types.
-typedef enum { LVAL_NUM, LVAL_ERR, LVAL_SYM, LVAL_SEXPR } LVAL_TYPE;
+typedef enum {
+    LVAL_NUM, LVAL_ERR, LVAL_SYM, LVAL_SEXPR, LVAL_QEXPR
+} LVAL_TYPE;
 
 // A "Lisp value" (lval), which is either "some thing" or an error.
 typedef struct lval {
@@ -21,6 +23,7 @@ lval *lval_num(const long num);
 lval *lval_err(const char *err);
 lval *lval_sym(const char *sym);
 lval *lval_sexpr(void);
+lval *lval_qexpr(void);
 
 // Destructor.
 void lval_free(lval *v);

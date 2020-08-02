@@ -40,18 +40,21 @@ int main(void) {
     mpc_parser_t *Number = mpc_new("number");
     mpc_parser_t *Symbol = mpc_new("symbol");
     mpc_parser_t *Sexpr  = mpc_new("sexpr"); // S(ymbol)-Expression
+    mpc_parser_t *Qexpr  = mpc_new("qexpr"); // Q(uoted)-Expression
     mpc_parser_t *Expr   = mpc_new("expr");
     mpc_parser_t *Lispy  = mpc_new("lispy");
 
     mpca_lang(MPCA_LANG_DEFAULT,
-        "                                            \
-            number : /-?[0-9]+/ ;                    \
-            symbol : '+' | '-' | '*' | '/' ;         \
-            sexpr  : '(' <expr>* ')' ;               \
-            expr   : <number> | <symbol> | <sexpr> ; \
-            lispy  : /^/ <expr>* /$/ ;               \
+        "                                       \
+            number : /-?[0-9]+/ ;               \
+            symbol : '+' | '-' | '*' | '/' ;    \
+            sexpr  : '(' <expr>* ')' ;          \
+            qexpr  : '{' <expr>* '}' ;          \
+            expr   : <number> | <symbol>        \
+                   | <sexpr> | <qexpr> ;        \
+            lispy  : /^/ <expr>* /$/ ;          \
         ",
-        Number, Symbol, Sexpr, Expr, Lispy
+        Number, Symbol, Sexpr, Qexpr, Expr, Lispy
     );
 
     puts("Lispy Version 0.6.6.6");
@@ -67,8 +70,6 @@ int main(void) {
             lval *x = lval_eval(lval_read(r.output));
             lval_println(x);
             lval_free(x);
-
-            // lval_println(eval(r.output));
             mpc_ast_delete(r.output);
         } else {
             mpc_err_print(r.error);
@@ -79,7 +80,7 @@ int main(void) {
     }
 
     // Undefine and delete parsers.
-    mpc_cleanup(5, Number, Symbol, Sexpr, Expr, Lispy);
+    mpc_cleanup(6, Number, Symbol, Sexpr, Qexpr, Expr, Lispy);
 
     return 0;
 }
