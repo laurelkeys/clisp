@@ -1,7 +1,7 @@
 #include "lval.h"
 
 //
-// lval constructors.
+// Constructors.
 //
 
 lval *lval_num(const long num) {
@@ -38,7 +38,7 @@ lval *lval_sexpr(void) {
 }
 
 //
-// lval destructor.
+// Destructor.
 //
 
 void lval_free(lval *v) {
@@ -69,8 +69,109 @@ lval *lval_add(lval *v, lval *x) {
     return v;
 }
 
+lval *lval_pop(lval *v, const int i) {
+    lval *x = v->cell[i];
+
+    // Shift memory after the `i`-th cell item (i.e. `x`),
+    // update the cell count, and reallocate the memory used.
+    memmove(
+        /*dst*/ &v->cell[i],
+        /*src*/ &v->cell[i + 1],
+        /*count*/ (v->cell_count - (i + 1)) * sizeof(lval *));
+    v->cell_count--;
+    v->cell = realloc(v->cell, v->cell_count * sizeof(lval *));
+
+    return x;
+}
+
+lval *lval_take(lval *v, const int i) {
+    lval *x = lval_pop(v, i);
+    lval_free(v);
+    return x;
+}
+
 //
-// Read functions.
+// Eval.
+//
+
+lval *lval_eval_builtin_op(lval *v, const char *op) {
+    // Ensure all arguments are numbers.
+    for (int i = 0; i < v->cell_count; ++i) {
+        if (v->cell[i]->type != LVAL_NUM) {
+            lval_free(v);
+            return lval_err("cannot operate on non-number!");
+        }
+    }
+
+    // Pop the first element.
+    lval *x = lval_pop(v, 0);
+
+    // If `op` == "-" and there are no arguments, perform unary negation.
+    if (!strcmp(op, "-") && v->cell_count == 0) x->num = -x->num;
+
+    while (v->cell_count > 0) {
+        // Pop the next element.
+        lval *y = lval_pop(v, 0);
+
+        if (!strcmp(op, "+")) x->num += y->num;
+        if (!strcmp(op, "-")) x->num -= y->num;
+        if (!strcmp(op, "*")) x->num *= y->num;
+        if (!strcmp(op, "/")) {
+            if (y->num == 0) {
+                lval_free(x);
+                lval_free(y);
+                x = lval_err("division by zero!");
+                break;
+            }
+            x->num /= y->num;
+        }
+
+        lval_free(y);
+    }
+
+    lval_free(v);
+    return x;
+}
+
+lval *lval_eval_sexpr(lval *v) {
+    // Evaluate children.
+    for (int i = 0; i < v->cell_count; ++i)
+        v->cell[i] = lval_eval(v->cell[i]);
+
+    // Error checking.
+    for (int i = 0; i < v->cell_count; ++i)
+        if (v->cell[i]->type == LVAL_ERR) return lval_take(v, i);
+
+    // Empty expression.
+    if (v->cell_count == 0) return v;
+
+    // Single expression.
+    if (v->cell_count == 1) return lval_take(v, 0);
+
+    // Ensure first element is symbol.
+    lval *f = lval_pop(v, 0);
+    if (f->type != LVAL_SYM) {
+        lval_free(f);
+        lval_free(v);
+        return lval_err("S-expression does not start with symbol!");
+    }
+
+    // Call builtin with operator.
+    lval *result = lval_eval_builtin_op(v, f->sym);
+    lval_free(f);
+    return result;
+}
+
+lval *lval_eval(lval *v) {
+    // Evaluate S-expressions.
+    if (v->type == LVAL_SEXPR) return lval_eval_sexpr(v);
+
+    // All other lval types remain the same.
+    return v;
+}
+
+//
+// Read.
 //
 
 lval *lval_read_num(const mpc_ast_t *t) {
@@ -87,7 +188,7 @@ lval *lval_read(const mpc_ast_t *t) {
     if (strstr(t->tag, "symbol")) return lval_sym(t->contents);
 
     // If root (>) or sexpr, then create an empty list.
-    lval* x = NULL;
+    lval *x = NULL;
     if (!strcmp(t->tag, ">"))    x = lval_sexpr();
     if (strstr(t->tag, "sexpr")) x = lval_sexpr();
 
@@ -103,7 +204,7 @@ lval *lval_read(const mpc_ast_t *t) {
 }
 
 //
-// Print functions.
+// Print.
 //
 
 void lval_expr_print(const lval *v, const char open, const char close) {

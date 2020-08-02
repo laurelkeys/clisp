@@ -16,23 +16,30 @@ typedef struct lval {
     struct lval **cell;
 } lval;
 
-// lval constructors (one per LVAL_TYPE).
+// Constructors (one per LVAL_TYPE).
 lval *lval_num(const long num);
 lval *lval_err(const char *err);
 lval *lval_sym(const char *sym);
 lval *lval_sexpr(void);
 
-// lval destructor.
+// Destructor.
 void lval_free(lval *v);
 
 // Helper functions.
 lval *lval_add(lval *v, lval *x);
+lval *lval_pop(lval *v, const int i);
+lval *lval_take(lval *v, const int i);
 
-// Read functions.
+// Eval.
+lval *lval_eval_builtin_op(lval *v, const char *op);
+lval *lval_eval_sexpr(lval *v);
+lval *lval_eval(lval *v);
+
+// Read.
 lval *lval_read_num(const mpc_ast_t *t);
 lval *lval_read(const mpc_ast_t *t);
 
-// Print functions.
+// Print.
 void lval_expr_print(const lval *v, const char open, const char close);
 void lval_print(const lval *v);
 void lval_println(const lval *v);

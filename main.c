@@ -36,50 +36,7 @@ void add_history(char *unused) {}
 #include <editline/history.h>
 #endif
 
-#if 0
-lval eval_op(const lval x, const char *op, const lval y) {
-    if (x.type == LVAL_ERR) return x;
-    if (y.type == LVAL_ERR) return y;
-
-    assert(x.type == LVAL_NUM && y.type == LVAL_NUM);
-
-    if (!strcmp(op, "+")) return lval_num(x.num + y.num);
-    if (!strcmp(op, "-")) return lval_num(x.num - y.num);
-    if (!strcmp(op, "*")) return lval_num(x.num * y.num);
-    if (!strcmp(op, "/")) {
-        return y.num == 0
-            ? lval_err(LERR_DIV_ZERO)
-            : lval_num(x.num / y.num);
-    }
-
-    return lval_err(LERR_BAD_OP);
-}
-
-lval eval(const mpc_ast_t *t) {
-    // If tagged as number, return it directly.
-    if (strstr(t->tag, "number")) {
-        errno = 0;
-        const long x = strtol(t->contents, NULL, 10);
-        return errno != ERANGE
-            ? lval_num(x)
-            : lval_err(LERR_BAD_NUM);
-    }
-
-    // The operator is always the second child.
-    const char *op = t->children[1]->contents;
-
-    // Store the third child in `x`, iterate through
-    // the remaining children, and combine the result.
-    lval x = eval(t->children[2]);
-
-    for (int i = 3; strstr(t->children[i]->tag, "expr"); ++i)
-        x = eval_op(x, op, eval(t->children[i]));
-
-    return x;
-}
-#endif
-
-int main(int argc, const char *argv[]) {
+int main(void) {
     mpc_parser_t *Number = mpc_new("number");
     mpc_parser_t *Symbol = mpc_new("symbol");
     mpc_parser_t *Sexpr  = mpc_new("sexpr"); // S(ymbol)-Expression
@@ -107,7 +64,7 @@ int main(int argc, const char *argv[]) {
         // Parse the user input.
         mpc_result_t r;
         if (mpc_parse("<stdin>", input, Lispy, &r)) {
-            lval *x = lval_read(r.output);
+            lval *x = lval_eval(lval_read(r.output));
             lval_println(x);
             lval_free(x);
 
