@@ -72,6 +72,15 @@ void lval_free(lval *v) {
     free(v);
 }
 
+lval *lval_join(lval *x, lval *y) {
+    // For each cell in `y` add it to `x`.
+    while (y->cell_count) x = lval_add(x, lval_pop(y, 0));
+
+    // Delete the empty `y` and return `x`.
+    lval_free(y);
+    return x;
+}
+
 //
 // Helper functions.
 //
@@ -105,27 +114,39 @@ lval *lval_take(lval *v, const int i) {
 }
 
 //
-// Eval.
+// Built-in functions.
 //
 
-lval *lval_eval_builtin_op(lval *v, const char *op) {
+lval *lval_builtin(lval *a, const char *func) {
+    if (!strcmp("list", func)) return lval_builtin_list(a);
+    if (!strcmp("head", func)) return lval_builtin_head(a);
+    if (!strcmp("tail", func)) return lval_builtin_tail(a);
+    if (!strcmp("join", func)) return lval_builtin_join(a);
+    if (!strcmp("eval", func)) return lval_builtin_eval(a);
+    if (strstr("+-/*",  func)) return lval_builtin_op(a, func);
+
+    lval_free(a);
+    return lval_err("unknown function!");
+}
+
+#define LASSERT(args, cond, err) \
+    if (!(cond)) { lval_free(args); return lval_err(err); }
+
+lval *lval_builtin_op(lval *a, const char *op) {
     // Ensure all arguments are numbers.
-    for (int i = 0; i < v->cell_count; ++i) {
-        if (v->cell[i]->type != LVAL_NUM) {
-            lval_free(v);
-            return lval_err("cannot operate on non-number!");
-        }
+    for (int i = 0; i < a->cell_count; ++i) {
+        LASSERT(a, a->cell[i]->type == LVAL_NUM, "cannot operate on non-number!");
     }
 
     // Pop the first element.
-    lval *x = lval_pop(v, 0);
+    lval *x = lval_pop(a, 0);
 
     // If `op` == "-" and there are no arguments, perform unary negation.
-    if (!strcmp(op, "-") && v->cell_count == 0) x->num = -x->num;
+    if (!strcmp(op, "-") && a->cell_count == 0) x->num = -x->num;
 
-    while (v->cell_count > 0) {
+    while (a->cell_count > 0) {
         // Pop the next element.
-        lval *y = lval_pop(v, 0);
+        lval *y = lval_pop(a, 0);
 
         if (!strcmp(op, "+")) x->num += y->num;
         if (!strcmp(op, "-")) x->num -= y->num;
@@ -143,9 +164,65 @@ lval *lval_eval_builtin_op(lval *v, const char *op) {
         lval_free(y);
     }
 
-    lval_free(v);
+    lval_free(a);
     return x;
 }
+
+lval *lval_builtin_head(lval *a) {
+    LASSERT(a, a->cell_count == 1, "function 'head' passed too many arguments!");
+    LASSERT(a, a->cell[0]->type == LVAL_QEXPR, "function 'head' passed incorrect type!");
+    LASSERT(a, a->cell[0]->cell_count != 0, "function 'head' passed {}!");
+
+    // Take the first argument.
+    lval *v = lval_take(a, 0);
+
+    // Delete all elements that are not head and return.
+    while (v->cell_count > 1) lval_free(lval_pop(v, 1));
+    return v;
+}
+
+lval *lval_builtin_tail(lval *a) {
+    LASSERT(a, a->cell_count == 1, "function 'tail' passed too many arguments!");
+    LASSERT(a, a->cell[0]->type == LVAL_QEXPR, "function 'tail' passed incorrect type!");
+    LASSERT(a, a->cell[0]->cell_count != 0, "function 'tail' passed {}!");
+
+    // Take the first argument.
+    lval* v = lval_take(a, 0);
+
+    // Delete the first element and return.
+    lval_free(lval_pop(v, 0));
+    return v;
+}
+
+lval *lval_builtin_list(lval *a) {
+    a->type = LVAL_QEXPR;
+    return a;
+}
+
+lval *lval_builtin_eval(lval *a) {
+    LASSERT(a, a->cell_count == 1, "function 'eval' passed too many arguments!");
+    LASSERT(a, a->cell[0]->type == LVAL_QEXPR, "function 'eval' passed incorrect type!");
+
+    lval *x = lval_take(a, 0);
+    x->type = LVAL_SEXPR;
+    return lval_eval(x);
+}
+
+lval *lval_builtin_join(lval *a) {
+    for (int i = 0; i < a->cell_count; ++i) {
+        LASSERT(a, a->cell[i]->type == LVAL_QEXPR, "function 'join' passed incorrect type!");
+    }
+
+    lval *x = lval_pop(a, 0);
+    while (a->cell_count) x = lval_join(x, lval_pop(a, 0));
+
+    lval_free(a);
+    return x;
+}
+
+//
+// Eval.
+//
 
 lval *lval_eval_sexpr(lval *v) {
     // Evaluate children.
@@ -170,8 +247,8 @@ lval *lval_eval_sexpr(lval *v) {
         return lval_err("S-expression does not start with symbol!");
     }
 
-    // Call builtin with operator.
-    lval *result = lval_eval_builtin_op(v, f->sym);
+    // Call built-in with operator.
+    lval *result = lval_builtin(v, f->sym);
     lval_free(f);
     return result;
 }
@@ -213,7 +290,7 @@ lval *lval_read(const mpc_ast_t *t) {
         if (!strcmp(t->children[i]->contents, ")")) continue;
         if (!strcmp(t->children[i]->contents, "{")) continue;
         if (!strcmp(t->children[i]->contents, "}")) continue;
-        if (!strcmp(t->children[i]->tag, "regex"))  continue;
+        if (!strcmp(t->children[i]->tag,  "regex")) continue;
         x = lval_add(x, lval_read(t->children[i]));
     }
 

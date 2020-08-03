@@ -47,7 +47,10 @@ int main(void) {
     mpca_lang(MPCA_LANG_DEFAULT,
         "                                       \
             number : /-?[0-9]+/ ;               \
-            symbol : '+' | '-' | '*' | '/' ;    \
+            symbol : \"list\"                   \
+                   | \"head\" | \"tail\"        \
+                   | \"join\" | \"eval\"        \
+                   | '+' | '-' | '*' | '/' ;    \
             sexpr  : '(' <expr>* ')' ;          \
             qexpr  : '{' <expr>* '}' ;          \
             expr   : <number> | <symbol>        \
