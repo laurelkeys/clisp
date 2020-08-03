@@ -3,20 +3,40 @@
 
 #include "mpc.h"
 
-// Valid lval types.
+// Forward declarations.
+struct lval;
+struct lenv;
+typedef struct lval lval;
+typedef struct lenv lenv;
+
+// Valid types for a lval.
 typedef enum {
-    LVAL_NUM, LVAL_ERR, LVAL_SYM, LVAL_SEXPR, LVAL_QEXPR
+    LVAL_NUM, LVAL_ERR,   LVAL_SYM,
+    LVAL_FUN, LVAL_SEXPR, LVAL_QEXPR
 } LVAL_TYPE;
 
+// Pointer to a built-in lval function.
+typedef lval *(*lbuiltin)(lenv *, lval *);
+
 // A "Lisp value" (lval), which is either "some thing" or an error.
-typedef struct lval {
+struct lval {
     LVAL_TYPE   type;
+
     long        num;
     char        *err;
     char        *sym;
+    lbuiltin    fun;
+
     int         cell_count;
-    struct lval **cell;
-} lval;
+    lval        **cell;
+};
+
+// A "Lisp environment", which encodes relationships between names and values.
+struct lenv {
+  int   count;
+  char  **syms;
+  lval  **vals;
+};
 
 //
 // Constructors (one per LVAL_TYPE).
@@ -25,14 +45,19 @@ typedef struct lval {
 lval *lval_num(const long num);
 lval *lval_err(const char *err);
 lval *lval_sym(const char *sym);
+lval *lval_fun(lbuiltin fun);
 lval *lval_sexpr(void);
 lval *lval_qexpr(void);
+
+lenv *lenv_new(void);
 
 //
 // Destructor.
 //
 
 void lval_free(lval *v);
+
+void lenv_free(lenv *e);
 
 //
 // Helper functions.
@@ -51,6 +76,12 @@ lval *lval_take(lval *v, const int i);
 // Repeatedly pops items from `y` and adds them to `x`, until `y` is empty.
 // Then deletes `y` and returns `x`.
 lval *lval_join(lval *x, lval *y);
+
+// Creates a copy of an lval.
+lval *lval_copy(lval *v);
+
+lval *lenv_get(lenv *e, lval *k);
+void lenv_put(lenv *e, lval *k, lval *v);
 
 //
 // Built-in functions.
@@ -77,8 +108,8 @@ lval *lval_builtin_join(lval *a);
 // Eval.
 //
 
-lval *lval_eval_sexpr(lval *v);
-lval *lval_eval(lval *v);
+lval *lval_eval_sexpr(lenv *e, lval *v);
+lval *lval_eval(lenv *e, lval *v);
 
 //
 // Read.
@@ -91,7 +122,7 @@ lval *lval_read(const mpc_ast_t *t);
 // Print.
 //
 
-void lval_expr_print(const lval *v, const char open, const char close);
+void lval_print_expr(const lval *v, const char open, const char close);
 void lval_print(const lval *v);
 void lval_println(const lval *v);
 
