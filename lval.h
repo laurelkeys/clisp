@@ -112,6 +112,9 @@ lval *lval_builtin_eval(lenv *e, lval *a);
 // Takes one or more Q-Expressions and returns a Q-Expression of them conjoined together.
 lval *lval_builtin_join(lenv *e, lval *a);
 
+// Adds a user-defined function to the environment `e`.
+lval *lval_builtin_def(lenv *e, lval *a);
+
 //
 // Eval.
 //

@@ -241,6 +241,8 @@ void lenv_add_builtins(lenv *e) {
     lenv_add_builtin(e, "-", lval_builtin_sub);
     lenv_add_builtin(e, "*", lval_builtin_mul);
     lenv_add_builtin(e, "/", lval_builtin_div);
+
+    lenv_add_builtin(e, "def", lval_builtin_def);
 }
 
 void lenv_add_builtin(lenv *e, const char *name, lbuiltin fun) {
@@ -344,6 +346,31 @@ lval *lval_builtin_join(lenv *e, lval *a) {
 
     lval_free(a);
     return x;
+}
+
+lval *lval_builtin_def(lenv *e, lval *a) {
+    LASSERT(a, a->cell[0]->type == LVAL_QEXPR, "function 'def' passed incorrect type!");
+
+    // First argument is (expected to be) a symbol list.
+    lval *syms = a->cell[0];
+    for (int i = 0; i < syms->cell_count; ++i) {
+        LASSERT(a, syms->cell[i]->type == LVAL_SYM, "function 'def' cannot define non-symbol");
+    }
+
+    LASSERT(
+        a, syms->cell_count == a->cell_count - 1,
+        "function 'def' cannot define incorrect number of values to symbols"
+    );
+
+    // Assign (copies of) values to symbols.
+    for (int i = 0; i < syms->cell_count; ++i) {
+        // Note that `syms` is `a->cell[0]`, hence why the `i`-th
+        // value corresponds to the `i + 1`-th symbol in `a->cell`.
+        lenv_put(e, syms->cell[i], a->cell[i + 1]);
+    }
+
+    lval_free(a);
+    return lval_sexpr();
 }
 
 //
