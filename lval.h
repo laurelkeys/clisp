@@ -9,6 +9,9 @@ struct lenv;
 typedef struct lval lval;
 typedef struct lenv lenv;
 
+// Max size for an error message.
+#define MAX_ERR_LEN 511
+
 // Valid types for a lval.
 typedef enum {
     LVAL_NUM, LVAL_ERR,   LVAL_SYM,
@@ -43,7 +46,7 @@ struct lenv {
 //
 
 lval *lval_num(const long num);
-lval *lval_err(const char *err);
+lval *lval_err(const char *fmt, ...);
 lval *lval_sym(const char *sym);
 lval *lval_fun(lbuiltin fun);
 lval *lval_sexpr(void);
@@ -79,6 +82,9 @@ lval *lval_join(lval *x, lval *y);
 
 // Creates a copy of an lval.
 lval *lval_copy(lval *v);
+
+// Returns a string representation of the type.
+char *lval_type_name(LVAL_TYPE t);
 
 lval *lenv_get(lenv *e, lval *k);
 void lenv_put(lenv *e, lval *k, lval *v);
