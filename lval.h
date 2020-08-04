@@ -88,21 +88,29 @@ void lenv_put(lenv *e, lval *k, lval *v);
 //
 
 // Calls the correct built-in function.
-lval *lval_builtin(lval *a, const char *func);
+lval *lval_builtin(lenv *e, lval *a, const char *fun);
 
-lval *lval_builtin_op(lval *a, const char *op); // + - * /
+// Adds the built-in functions to the environment `e`.
+void lenv_add_builtins(lenv *e);
+void lenv_add_builtin(lenv *e, const char *name, lbuiltin fun);
 
-lval *lval_builtin_head(lval *a);
-lval *lval_builtin_tail(lval *a);
+lval *lval_builtin_op(lenv *e, lval *a, const char *op); // + - * /
+lval *lval_builtin_add(lenv *e, lval *a);
+lval *lval_builtin_sub(lenv *e, lval *a);
+lval *lval_builtin_mul(lenv *e, lval *a);
+lval *lval_builtin_div(lenv *e, lval *a);
 
 // Takes one or more arguments and returns a new Q-Expression containing the arguments.
-lval *lval_builtin_list(lval *a);
+lval *lval_builtin_list(lenv *e, lval *a);
+
+lval *lval_builtin_head(lenv *e, lval *a);
+lval *lval_builtin_tail(lenv *e, lval *a);
 
 // Takes a Q-Expression and evaluates it as if it were a S-Expression.
-lval *lval_builtin_eval(lval *a);
+lval *lval_builtin_eval(lenv *e, lval *a);
 
 // Takes one or more Q-Expressions and returns a Q-Expression of them conjoined together.
-lval *lval_builtin_join(lval *a);
+lval *lval_builtin_join(lenv *e, lval *a);
 
 //
 // Eval.

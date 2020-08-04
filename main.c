@@ -59,6 +59,10 @@ int main(void) {
         Number, Symbol, Sexpr, Qexpr, Expr, Lispy
     );
 
+    // Create an environment with built-in functions.
+    lenv *e = lenv_new();
+    lenv_add_builtins(e);
+
     puts("Lispy Version 0.6.6.6");
     puts("Press Ctrl+C to exit\n");
 
@@ -69,8 +73,9 @@ int main(void) {
         // Parse the user input.
         mpc_result_t r;
         if (mpc_parse("<stdin>", input, Lispy, &r)) {
-            lval *x = lval_eval(lval_read(r.output));
+            lval *x = lval_eval(e, lval_read(r.output));
             lval_println(x);
+
             lval_free(x);
             mpc_ast_delete(r.output);
         } else {
@@ -80,6 +85,8 @@ int main(void) {
 
         free(input);
     }
+
+    lenv_free(e);
 
     // Undefine and delete parsers.
     mpc_cleanup(6, Number, Symbol, Sexpr, Qexpr, Expr, Lispy);
