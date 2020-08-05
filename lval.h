@@ -25,17 +25,25 @@ typedef lval *(*lbuiltin)(lenv *, lval *);
 struct lval {
     LVAL_TYPE   type;
 
+    // Basic.
     long        num;
     char        *err;
     char        *sym;
-    lbuiltin    fun;
 
+    // Function.
+    lbuiltin    builtin; // NULL for user-defined functions
+    lenv        *env;
+    lval        *formals;
+    lval        *body;
+
+    // {S,Q}-Expression.
     int         cell_count;
     lval        **cell;
 };
 
 // A "Lisp environment", which encodes relationships between names and values.
 struct lenv {
+  lenv  *parent_ref; // reference to a parent environment
   int   count;
   char  **syms;
   lval  **vals;
@@ -48,7 +56,8 @@ struct lenv {
 lval *lval_num(const long num);
 lval *lval_err(const char *fmt, ...);
 lval *lval_sym(const char *sym);
-lval *lval_fun(lbuiltin fun);
+lval *lval_fun(lbuiltin fun); // built-in function
+lval *lval_lambda(lval *formals, lval *body); // user-defined function
 lval *lval_sexpr(void);
 lval *lval_qexpr(void);
 
@@ -65,6 +74,9 @@ void lenv_free(lenv *e);
 //
 // Helper functions.
 //
+
+// Returns a string representation of the type.
+char *lval_type_name(LVAL_TYPE t);
 
 // Adds an element (`x`) to a {S,Q}-Expression (`v`).
 lval *lval_add(lval *v, lval *x);
@@ -83,11 +95,17 @@ lval *lval_join(lval *x, lval *y);
 // Creates a copy of an lval.
 lval *lval_copy(lval *v);
 
-// Returns a string representation of the type.
-char *lval_type_name(LVAL_TYPE t);
+// Creates a copy of an lenv.
+lenv *lenv_copy(lenv *e);
 
+// Gets the lval mapped by `k`.
 lval *lenv_get(lenv *e, lval *k);
+
+// Puts `v`, mapped by `k`, in the local (innermost) environment of `e`.
 void lenv_put(lenv *e, lval *k, lval *v);
+
+// Puts `v`, mapped by `k`, in the global (outermost) environment of `e`.
+void lenv_def(lenv *e, lval *k, lval *v);
 
 //
 // Built-in functions.
@@ -118,8 +136,11 @@ lval *lval_builtin_eval(lenv *e, lval *a);
 // Takes one or more Q-Expressions and returns a Q-Expression of them conjoined together.
 lval *lval_builtin_join(lenv *e, lval *a);
 
-// Adds a user-defined function to the environment `e`.
+// Adds a user-defined variable to the environment `e`.
 lval *lval_builtin_def(lenv *e, lval *a);
+
+// Adds a user-defined function to the environment `e`.
+lval *lval_builtin_lambda(lenv *e, lval *a);
 
 //
 // Eval.
@@ -139,6 +160,7 @@ lval *lval_read(const mpc_ast_t *t);
 // Print.
 //
 
+void lval_print_lambda(const lval *v);
 void lval_print_expr(const lval *v, const char open, const char close);
 void lval_print(const lval *v);
 void lval_println(const lval *v);

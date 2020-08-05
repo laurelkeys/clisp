@@ -42,7 +42,17 @@ lval *lval_sym(const char *sym) {
 lval *lval_fun(lbuiltin fun) {
     lval *v = malloc(sizeof(lval));
     v->type = LVAL_FUN;
-    v->fun = fun;
+    v->builtin = fun;
+    return v;
+}
+
+lval *lval_lambda(lval *formals, lval *body) {
+    lval *v = malloc(sizeof(lval));
+    v->type = LVAL_FUN;
+    v->builtin = NULL;
+    v->env = lenv_new();
+    v->formals = formals;
+    v->body = body;
     return v;
 }
 
@@ -64,6 +74,7 @@ lval *lval_qexpr(void) {
 
 lenv *lenv_new(void) {
     lenv *e = malloc(sizeof(lenv));
+    e->parent_ref = NULL;
     e->count = 0;
     e->syms = NULL;
     e->vals = NULL;
@@ -76,11 +87,18 @@ lenv *lenv_new(void) {
 
 void lval_free(lval *v) {
     switch (v->type) {
-        case LVAL_FUN: break;
         case LVAL_NUM: break;
 
         case LVAL_ERR: free(v->err); break;
         case LVAL_SYM: free(v->sym); break;
+
+        case LVAL_FUN:
+            if (!v->builtin) {
+                lenv_free(v->env);
+                lval_free(v->formals);
+                lval_free(v->body);
+            }
+            break;
 
         case LVAL_SEXPR:
         case LVAL_QEXPR:
@@ -112,6 +130,18 @@ void lenv_free(lenv *e) {
 //
 // Helper functions.
 //
+
+char *lval_type_name(LVAL_TYPE t) {
+    switch (t) {
+        case LVAL_NUM:   return "Number";
+        case LVAL_ERR:   return "Error";
+        case LVAL_SYM:   return "Symbol";
+        case LVAL_FUN:   return "Function";
+        case LVAL_SEXPR: return "S-Expression";
+        case LVAL_QEXPR: return "Q-Expression";
+        default:         return "Unknown";
+    }
+}
 
 lval *lval_add(lval *v, lval *x) {
     v->cell_count++;
@@ -166,21 +196,29 @@ lval *lval_copy(lval *v) {
     x->type = v->type;
 
     switch (v->type) {
-        // Copy functions and numbers directly.
-        case LVAL_FUN: x->fun = v->fun; break;
         case LVAL_NUM: x->num = v->num; break;
 
-        // Copy strings using malloc and strcpy.
         case LVAL_ERR:
             x->err = malloc(strlen(v->err) + 1);
             strcpy(x->err, v->err);
             break;
+
         case LVAL_SYM:
             x->sym = malloc(strlen(v->sym) + 1);
             strcpy(x->sym, v->sym);
             break;
 
-        // Copy lists by copying each sub-expression.
+        case LVAL_FUN:
+            if (v->builtin) {
+                x->builtin = v->builtin;
+            } else {
+                x->builtin = NULL;
+                x->env = lenv_copy(v->env);
+                x->formals = lval_copy(v->formals);
+                x->body = lval_copy(v->body);
+            }
+            break;
+
         case LVAL_SEXPR:
         case LVAL_QEXPR:
             x->cell_count = v->cell_count;
@@ -196,16 +234,22 @@ lval *lval_copy(lval *v) {
     return x;
 }
 
-char *lval_type_name(LVAL_TYPE t) {
-    switch (t) {
-        case LVAL_NUM:   return "Number";
-        case LVAL_ERR:   return "Error";
-        case LVAL_SYM:   return "Symbol";
-        case LVAL_FUN:   return "Function";
-        case LVAL_SEXPR: return "S-Expression";
-        case LVAL_QEXPR: return "Q-Expression";
-        default:         return "Unknown";
+lenv *lenv_copy(lenv *e) {
+    lenv *n = malloc(sizeof(lenv));
+    n->parent_ref = e->parent_ref;
+    n->count = e->count;
+
+    n->syms = malloc(n->count * sizeof(char *));
+    n->vals = malloc(n->count * sizeof(lval *));
+
+    for (int i = 0; i < e->count; ++i) {
+        n->syms[i] = malloc(strlen(e->syms[i]) + 1);
+        strcpy(n->syms[i], e->syms[i]);
+
+        n->vals[i] = lval_copy(e->vals[i]);
     }
+
+    return n;
 }
 
 lval *lenv_get(lenv *e, lval *k) {
@@ -217,6 +261,9 @@ lval *lenv_get(lenv *e, lval *k) {
             return lval_copy(e->vals[i]);
         }
     }
+
+    // If no symbol is found, check for it in the parent environment.
+    if (e->parent_ref) return lenv_get(e->parent_ref, k);
 
     return lval_err("unbound symbol `%s`", k->sym);
 }
@@ -243,6 +290,13 @@ void lenv_put(lenv *e, lval *k, lval *v) {
 
     e->vals = realloc(e->vals, e->count * sizeof(lval *));
     e->vals[e->count - 1] = lval_copy(v);
+}
+
+void lenv_def(lenv *e, lval *k, lval *v) {
+    while (e->parent_ref)
+        e = e->parent_ref;
+
+    lenv_put(e, k, v);
 }
 
 //
@@ -287,7 +341,8 @@ lval *lval_builtin(lenv *e, lval *a, const char *fun) {
         fun, index)
 
 void lenv_add_builtins(lenv *e) {
-    lenv_add_builtin(e, "def", lval_builtin_def);
+    lenv_add_builtin(e, "def", lval_builtin_def); // user-defined variable
+    lenv_add_builtin(e, "\\", lval_builtin_lambda); // user-defined function
 
     lenv_add_builtin(e, "list", lval_builtin_list);
     lenv_add_builtin(e, "head", lval_builtin_head);
@@ -432,6 +487,27 @@ lval *lval_builtin_def(lenv *e, lval *a) {
     return lval_sexpr();
 }
 
+lval *lval_builtin_lambda(lenv *e, lval *a) {
+    LASSERT_ARG_COUNT("\\", a, /*count*/ 2);
+    LASSERT_ARG_TYPE("\\", a, /*index*/ 0, /*expected*/ LVAL_QEXPR);
+    LASSERT_ARG_TYPE("\\", a, /*index*/ 1, /*expected*/ LVAL_QEXPR);
+
+    // Check if the first Q-Expression only contains symbols.
+    for (int i = 0; i < a->cell[0]->cell_count; ++i) {
+        LASSERT(
+            a, (a->cell[0]->cell[i]->type == LVAL_SYM),
+            "cannot define non-symbol. Got %s, expected %s.",
+            lval_type_name(a->cell[0]->cell[i]->type), lval_type_name(LVAL_SYM)
+        );
+    }
+
+    lval *formals = lval_pop(a, 0);
+    lval *body = lval_pop(a, 0);
+    lval_free(a);
+
+    return lval_lambda(formals, body);
+}
+
 //
 // Eval.
 //
@@ -464,7 +540,7 @@ lval *lval_eval_sexpr(lenv *e, lval *v) {
     }
 
     // Call built-in function.
-    lval *result = f->fun(e, v);
+    lval *result = f->builtin(e, v);
     lval_free(f);
     return result;
 }
@@ -524,6 +600,15 @@ lval *lval_read(const mpc_ast_t *t) {
 // Print.
 //
 
+void lval_print_lambda(const lval *v) {
+    // (\ `formals` `body`)
+    printf("(\\ ");
+    lval_print(v->formals);
+    putchar(' ');
+    lval_print(v->body);
+    putchar(')');
+}
+
 void lval_print_expr(const lval *v, const char open, const char close) {
     putchar(open);
     const int last_i = v->cell_count - 1;
@@ -536,13 +621,16 @@ void lval_print_expr(const lval *v, const char open, const char close) {
 
 void lval_print(const lval *v) {
     switch (v->type) {
-        case LVAL_NUM:   printf("%li", v->num);        break;
-        case LVAL_ERR:   printf("Error: %s", v->err);  break;
-        case LVAL_SYM:   printf("%s", v->sym);         break;
-        case LVAL_FUN:   printf("<function>");         break;
-        case LVAL_SEXPR: lval_print_expr(v, '(', ')'); break;
-        case LVAL_QEXPR: lval_print_expr(v, '{', '}'); break;
-        default:         assert(false);
+        case LVAL_NUM:      printf("%li", v->num);        break;
+        case LVAL_ERR:      printf("Error: %s", v->err);  break;
+        case LVAL_SYM:      printf("%s", v->sym);         break;
+        case LVAL_FUN:
+            if (v->builtin) printf("<builtin>");
+            else            lval_print_lambda(v);
+            break;
+        case LVAL_SEXPR:    lval_print_expr(v, '(', ')'); break;
+        case LVAL_QEXPR:    lval_print_expr(v, '{', '}'); break;
+        default:            assert(false);
     }
 }
 
