@@ -92,6 +92,10 @@ lval *lval_take(lval *v, const int i);
 // Then deletes `y` and returns `x`.
 lval *lval_join(lval *x, lval *y);
 
+// Calls a (built-in or user-defined) function `f` with arguments `a`.
+// The function is (possibly partially) evaluated on the environment `e`.
+lval *lval_call(lenv *e, lval *f, lval *a);
+
 // Creates a copy of an lval.
 lval *lval_copy(lval *v);
 
@@ -118,7 +122,8 @@ lval *lval_builtin(lenv *e, lval *a, const char *fun);
 void lenv_add_builtins(lenv *e);
 void lenv_add_builtin(lenv *e, const char *name, lbuiltin fun);
 
-lval *lval_builtin_op(lenv *e, lval *a, const char *op); // + - * /
+// + - * /
+lval *lval_builtin_op(lenv *e, lval *a, const char *op);
 lval *lval_builtin_add(lenv *e, lval *a);
 lval *lval_builtin_sub(lenv *e, lval *a);
 lval *lval_builtin_mul(lenv *e, lval *a);
@@ -137,7 +142,9 @@ lval *lval_builtin_eval(lenv *e, lval *a);
 lval *lval_builtin_join(lenv *e, lval *a);
 
 // Adds a user-defined variable to the environment `e`.
-lval *lval_builtin_def(lenv *e, lval *a);
+lval *lval_builtin_var(lenv *e, lval *a, const char *fun);
+lval *lval_builtin_def(lenv *e, lval *a); // global assignment
+lval *lval_builtin_put(lenv *e, lval *a); // local assignment
 
 // Adds a user-defined function to the environment `e`.
 lval *lval_builtin_lambda(lenv *e, lval *a);

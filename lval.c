@@ -191,6 +191,52 @@ lval *lval_join(lval *x, lval *y) {
     return x;
 }
 
+lval *lval_call(lenv *e, lval *f, lval *a) {
+    // If `f` is a built-in, simply call it.
+    if (f->builtin) return f->builtin(e, a);
+
+    // Otherwise, assign each argument in order. Note that,
+    // if given < total, the function is partially applied.
+    const int given = a->cell_count;
+    const int total = f->formals->cell_count;
+
+    while (a->cell_count) {
+        if (f->formals->cell_count == 0) {
+            lval_free(a);
+            return lval_err(
+                "function passed too many arguments. "
+                "Got %i, expected %i.", given, total
+            );
+        }
+
+        lval *sym = lval_pop(f->formals, 0);
+        lval *val = lval_pop(a, 0);
+
+        lenv_put(f->env, sym, val);
+
+        lval_free(sym);
+        lval_free(val);
+    }
+
+    // Argument list is now bound, so it can be cleaned up.
+    lval_free(a);
+
+    // If all formals have been bound, evaluate.
+    if (f->formals->cell_count == 0) {
+        // Set the parent reference to the evaluation environment.
+        f->env->parent_ref = e;
+
+        // Evaluate the body and return.
+        return lval_builtin_eval(
+            f->env,
+            lval_add(lval_sexpr(), lval_copy(f->body))
+        );
+    }
+
+    // Otherwise, return the partially evaluated function.
+    return lval_copy(f);
+}
+
 lval *lval_copy(lval *v) {
     lval *x = malloc(sizeof(lval));
     x->type = v->type;
@@ -325,23 +371,24 @@ lval *lval_builtin(lenv *e, lval *a, const char *fun) {
 #define LASSERT_ARG_TYPE(fun, args, index, expected)                                       \
     LASSERT(                                                                               \
         args, (args)->cell[index]->type == expected,                                       \
-        "function `%s` passed incorrect type for argument `%i`. Got `%s`, expected `%s`.", \
+        "function '%s' passed incorrect type for argument `%i`. Got `%s`, expected `%s`.", \
         fun, index, lval_type_name((args)->cell[index]->type), lval_type_name(expected))
 
 #define LASSERT_ARG_COUNT(fun, args, count)                                             \
     LASSERT(                                                                            \
         args, (args)->cell_count == count,                                              \
-        "function `%s` passed incorrect number of arguments. Got `%i`, expected `%i`.", \
+        "function '%s' passed incorrect number of arguments. Got `%i`, expected `%i`.", \
         fun, (args)->cell_count, count)
 
 #define LASSERT_ARG_NOT_EMPTY(fun, args, index)         \
     LASSERT(                                            \
         args, (args)->cell[index]->cell_count != 0,     \
-        "function `%s` passed `{}` for argument `%i`.", \
+        "function '%s' passed `{}` for argument `%i`.", \
         fun, index)
 
 void lenv_add_builtins(lenv *e) {
-    lenv_add_builtin(e, "def", lval_builtin_def); // user-defined variable
+    lenv_add_builtin(e, "def", lval_builtin_def); // user-(globally-)defined variable
+    lenv_add_builtin(e, "=", lval_builtin_put); // user-(locally-)defined variable
     lenv_add_builtin(e, "\\", lval_builtin_lambda); // user-defined function
 
     lenv_add_builtin(e, "list", lval_builtin_list);
@@ -457,35 +504,44 @@ lval *lval_builtin_join(lenv *e, lval *a) {
     return x;
 }
 
-lval *lval_builtin_def(lenv *e, lval *a) {
-    LASSERT_ARG_TYPE("def", a, /*index*/ 0, /*expected*/ LVAL_QEXPR);
+lval *lval_builtin_var(lenv *e, lval *a, const char *fun) {
+    LASSERT_ARG_TYPE(fun, a, /*index*/ 0, /*expected*/ LVAL_QEXPR);
 
     // First argument is (expected to be) a symbol list.
     lval *syms = a->cell[0];
     for (int i = 0; i < syms->cell_count; ++i) {
         LASSERT(
             a, syms->cell[i]->type == LVAL_SYM,
-            "function 'def' cannot define non-symbol. "
-            "Got %s, expected %s.", lval_type_name(syms->cell[i]->type), lval_type_name(LVAL_SYM)
+            "function '%s' cannot define non-symbol. Got `%s`, expected `%s`.",
+            fun, lval_type_name(syms->cell[i]->type), lval_type_name(LVAL_SYM)
         );
     }
 
     LASSERT(
         a, syms->cell_count == a->cell_count - 1,
-        "function 'def' cannot define an unmatched number of values to symbols. "
-        "Got %s, expected %s.", syms->cell_count, a->cell_count - 1
+        "function '%s' cannot define an unmatched number of values to symbols. "
+        "Got `%s`, expected `%s`.", fun, syms->cell_count, a->cell_count - 1
     );
 
     // Assign (copies of) values to symbols.
     for (int i = 0; i < syms->cell_count; ++i) {
         // Note that `syms` is `a->cell[0]`, hence why the `i`-th
         // value corresponds to the `i + 1`-th symbol in `a->cell`.
-        lenv_put(e, syms->cell[i], a->cell[i + 1]);
+
+        if (!strcmp(fun, "def"))
+            lenv_def(e, syms->cell[i], a->cell[i + 1]); // define in global scope
+        else if (!strcmp(fun, "="))
+            lenv_put(e, syms->cell[i], a->cell[i + 1]); // define in local scope
+        else
+            assert(false);
     }
 
     lval_free(a);
     return lval_sexpr();
 }
+
+lval *lval_builtin_def(lenv *e, lval *a) { return lval_builtin_var(e, a, "def"); }
+lval *lval_builtin_put(lenv *e, lval *a) { return lval_builtin_var(e, a, "="); }
 
 lval *lval_builtin_lambda(lenv *e, lval *a) {
     LASSERT_ARG_COUNT("\\", a, /*count*/ 2);
@@ -496,7 +552,7 @@ lval *lval_builtin_lambda(lenv *e, lval *a) {
     for (int i = 0; i < a->cell[0]->cell_count; ++i) {
         LASSERT(
             a, (a->cell[0]->cell[i]->type == LVAL_SYM),
-            "cannot define non-symbol. Got %s, expected %s.",
+            "cannot define non-symbol. Got `%s`, expected `%s`.",
             lval_type_name(a->cell[0]->cell[i]->type), lval_type_name(LVAL_SYM)
         );
     }
@@ -532,15 +588,16 @@ lval *lval_eval_sexpr(lenv *e, lval *v) {
     if (f->type != LVAL_FUN) {
         lval *err = lval_err(
             "S-Expression starting with incorrect type. "
-            "Got %s, expected %s.", lval_type_name(f->type), lval_type_name(LVAL_FUN)
+            "Got `%s`, expected `%s`.", lval_type_name(f->type), lval_type_name(LVAL_FUN)
         );
         lval_free(f);
         lval_free(v);
         return err;
     }
 
-    // Call built-in function.
-    lval *result = f->builtin(e, v);
+    // Call the (built-in or user-defined) function.
+    lval *result = lval_call(e, f, v);
+
     lval_free(f);
     return result;
 }
