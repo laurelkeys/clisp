@@ -174,7 +174,7 @@ lval *lval_take(lval *v, const int i) {
 }
 
 lval *lval_join(lval *x, lval *y) {
-#if 0
+#if false
     for (int i = 0; i < y->cell_count; ++i)
         x = lval_add(x, y->cell[i]);
 
@@ -190,6 +190,12 @@ lval *lval_join(lval *x, lval *y) {
 
     return x;
 }
+
+#define VARIABLE_ARGUMENTS true
+// Parse the symbol '&' as a way to create user-defined functions that can take in
+// a variable number of arguments, e.g.: a (lambda) function with formal arguments
+// `{x & xs}` will take in a single argument `x`, followed by zero or more other
+// arguments, joined together into a list called `xs`.
 
 lval *lval_call(lenv *e, lval *f, lval *a) {
     // If `f` is a built-in, simply call it.
@@ -210,6 +216,27 @@ lval *lval_call(lenv *e, lval *f, lval *a) {
         }
 
         lval *sym = lval_pop(f->formals, 0);
+#if VARIABLE_ARGUMENTS
+        // Special case to handle '&'.
+        if (!strcmp(sym->sym, "&")) {
+            // Ensure '&' is followed by another symbol.
+            if (f->formals->cell_count != 1) {
+                lval_free(a);
+                return lval_err(
+                    "function format invalid. "
+                    "Symbol '&' not followed by single symbol."
+                );
+            }
+
+            // Next formal should be bound to the remaining arguments.
+            lval *nsym = lval_pop(f->formals, 0);
+            lenv_put(f->env, nsym, lval_builtin_list(e, a));
+
+            lval_free(sym);
+            lval_free(nsym);
+            break;
+        }
+#endif
         lval *val = lval_pop(a, 0);
 
         lenv_put(f->env, sym, val);
@@ -220,6 +247,31 @@ lval *lval_call(lenv *e, lval *f, lval *a) {
 
     // Argument list is now bound, so it can be cleaned up.
     lval_free(a);
+
+#if VARIABLE_ARGUMENTS
+    // If '&' remains in the formal list, bind to empty list.
+    if (f->formals->cell_count > 0
+        && !strcmp(f->formals->cell[0]->sym, "&")) {
+        // Ensure that '&' is not passed invalidly.
+        if (f->formals->cell_count != 2)
+            return lval_err(
+                "function format invalid. "
+                "Symbol '&' not followed by single symbol."
+            );
+
+        // Pop and delete the '&' symbol.
+        lval_free(lval_pop(f->formals, 0));
+
+        // Pop next symbol and create empty list.
+        lval *sym = lval_pop(f->formals, 0);
+        lval *val = lval_qexpr();
+
+        lenv_put(f->env, sym, val);
+
+        lval_free(sym);
+        lval_free(val);
+    }
+#endif
 
     // If all formals have been bound, evaluate.
     if (f->formals->cell_count == 0) {
@@ -387,9 +439,9 @@ lval *lval_builtin(lenv *e, lval *a, const char *fun) {
         fun, index)
 
 void lenv_add_builtins(lenv *e) {
+    lenv_add_builtin(e, "\\", lval_builtin_lambda); // user-defined function
     lenv_add_builtin(e, "def", lval_builtin_def); // user-(globally-)defined variable
     lenv_add_builtin(e, "=", lval_builtin_put); // user-(locally-)defined variable
-    lenv_add_builtin(e, "\\", lval_builtin_lambda); // user-defined function
 
     lenv_add_builtin(e, "list", lval_builtin_list);
     lenv_add_builtin(e, "head", lval_builtin_head);
@@ -520,7 +572,7 @@ lval *lval_builtin_var(lenv *e, lval *a, const char *fun) {
     LASSERT(
         a, syms->cell_count == a->cell_count - 1,
         "function '%s' cannot define an unmatched number of values to symbols. "
-        "Got `%s`, expected `%s`.", fun, syms->cell_count, a->cell_count - 1
+        "Got %s, expected %s.", fun, syms->cell_count, a->cell_count - 1
     );
 
     // Assign (copies of) values to symbols.
@@ -551,7 +603,7 @@ lval *lval_builtin_lambda(lenv *e, lval *a) {
     // Check if the first Q-Expression only contains symbols.
     for (int i = 0; i < a->cell[0]->cell_count; ++i) {
         LASSERT(
-            a, (a->cell[0]->cell[i]->type == LVAL_SYM),
+            a, a->cell[0]->cell[i]->type == LVAL_SYM,
             "cannot define non-symbol. Got `%s`, expected `%s`.",
             lval_type_name(a->cell[0]->cell[i]->type), lval_type_name(LVAL_SYM)
         );
