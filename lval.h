@@ -1,6 +1,8 @@
 #ifndef __CLISP_LVAL_H__
 #define __CLISP_LVAL_H__
 
+#include <stdbool.h>
+
 #include "mpc.h"
 
 // Forward declarations.
@@ -96,6 +98,9 @@ lval *lval_join(lval *x, lval *y);
 // The function is (possibly partially) evaluated on the environment `e`.
 lval *lval_call(lenv *e, lval *f, lval *a);
 
+// Indicates whether `x` is "equal to" `y`.
+bool lval_builtin_equals(lval *x, lval *y);
+
 // Creates a copy of an lval.
 lval *lval_copy(lval *v);
 
@@ -123,11 +128,23 @@ void lenv_add_builtins(lenv *e);
 void lenv_add_builtin(lenv *e, const char *name, lbuiltin fun);
 
 // + - * /
-lval *lval_builtin_op(lenv *e, lval *a, const char *op);
+lval *lval_builtin_op(lenv *e, lval *a, const char *op); // (numbers only)
 lval *lval_builtin_add(lenv *e, lval *a);
 lval *lval_builtin_sub(lenv *e, lval *a);
 lval *lval_builtin_mul(lenv *e, lval *a);
 lval *lval_builtin_div(lenv *e, lval *a);
+
+// < > <= >=
+lval *lval_builtin_ord(lenv *e, lval *a, const char *op); // (numbers only)
+lval *lval_builtin_lt(lenv *e, lval *a);
+lval *lval_builtin_gt(lenv *e, lval *a);
+lval *lval_builtin_le(lenv *e, lval *a);
+lval *lval_builtin_ge(lenv *e, lval *a);
+
+// == !=
+lval *lval_builtin_cmp(lenv *e, lval *a, const char *op);
+lval *lval_builtin_eq(lenv *e, lval *a);
+lval *lval_builtin_ne(lenv *e, lval *a);
 
 // Takes one or more arguments and returns a new Q-Expression containing the arguments.
 lval *lval_builtin_list(lenv *e, lval *a);

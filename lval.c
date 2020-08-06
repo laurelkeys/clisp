@@ -2,7 +2,6 @@
 
 #include <assert.h>
 #include <stdarg.h>
-#include <stdbool.h>
 
 //
 // Constructors.
@@ -156,9 +155,9 @@ lval *lval_pop(lval *v, const int i) {
     // Shift memory after the `i`-th cell item (i.e. `x`),
     // update the cell count, and reallocate the memory used.
     memmove(
-        /*dst*/ &v->cell[i],
-        /*src*/ &v->cell[i + 1],
-        /*count*/ (v->cell_count - (i + 1)) * sizeof(lval *)
+        /*dst*/&v->cell[i],
+        /*src*/&v->cell[i + 1],
+        /*count*/(v->cell_count - (i + 1)) * sizeof(lval *)
     );
 
     v->cell_count--;
@@ -408,6 +407,8 @@ lval *lval_builtin(lenv *e, lval *a, const char *fun) {
     if (!strcmp("join", fun)) return lval_builtin_join(e, a);
     if (!strcmp("eval", fun)) return lval_builtin_eval(e, a);
     if (strstr("+-/*",  fun)) return lval_builtin_op(e, a, fun);
+    if (strstr("== != < > <= >=", fun)) return lval_builtin_lop(e, a, fun);
+    // if (strstr("!==<=>=", fun)) return lval_builtin_lop(e, a, fun);
 
     lval_free(a);
     return lval_err("unknown function `%s`", fun);
@@ -453,6 +454,14 @@ void lenv_add_builtins(lenv *e) {
     lenv_add_builtin(e, "-", lval_builtin_sub);
     lenv_add_builtin(e, "*", lval_builtin_mul);
     lenv_add_builtin(e, "/", lval_builtin_div);
+
+    lenv_add_builtin(e, "<=", lval_builtin_le);
+    lenv_add_builtin(e, ">=", lval_builtin_ge);
+    lenv_add_builtin(e, "<", lval_builtin_lt);
+    lenv_add_builtin(e, ">", lval_builtin_gt);
+
+    lenv_add_builtin(e, "==", lval_builtin_eq);
+    lenv_add_builtin(e, "!=", lval_builtin_ne);
 }
 
 void lenv_add_builtin(lenv *e, const char *name, lbuiltin fun) {
@@ -468,7 +477,7 @@ void lenv_add_builtin(lenv *e, const char *name, lbuiltin fun) {
 lval *lval_builtin_op(lenv *e, lval *a, const char *op) {
     // Ensure all arguments are numbers.
     for (int i = 0; i < a->cell_count; ++i)
-        LASSERT_ARG_TYPE(op, a, /*index*/ i, /*expected*/ LVAL_NUM);
+        LASSERT_ARG_TYPE(op, a, /*index*/i, /*expected*/LVAL_NUM);
 
     // Pop the first element.
     lval *x = lval_pop(a, 0);
@@ -505,15 +514,79 @@ lval *lval_builtin_sub(lenv *e, lval *a) { return lval_builtin_op(e, a, "-"); }
 lval *lval_builtin_mul(lenv *e, lval *a) { return lval_builtin_op(e, a, "*"); }
 lval *lval_builtin_div(lenv *e, lval *a) { return lval_builtin_op(e, a, "/"); }
 
+lval *lval_builtin_ord(lenv *e, lval *a, const char *op) {
+    LASSERT_ARG_COUNT(op, a, /*count*/2);
+    LASSERT_ARG_TYPE(op, a, /*index*/0, /*expected*/LVAL_NUM);
+    LASSERT_ARG_TYPE(op, a, /*index*/1, /*expected*/LVAL_NUM);
+
+    int result;
+    if (!strcmp(op, "<")) result = a->cell[0]->num < a->cell[1]->num;
+    if (!strcmp(op, ">")) result = a->cell[0]->num > a->cell[1]->num;
+    if (!strcmp(op, "<=")) result = a->cell[0]->num <= a->cell[1]->num;
+    if (!strcmp(op, ">=")) result = a->cell[0]->num >= a->cell[1]->num;
+
+    lval_free(a);
+    return lval_num(result);
+}
+
+lval *lval_builtin_lt(lenv *e, lval *a) { return lval_builtin_ord(e, a, "<"); }
+lval *lval_builtin_gt(lenv *e, lval *a) { return lval_builtin_ord(e, a, ">"); }
+lval *lval_builtin_le(lenv *e, lval *a) { return lval_builtin_ord(e, a, "<="); }
+lval *lval_builtin_ge(lenv *e, lval *a) { return lval_builtin_ord(e, a, ">="); }
+
+lval *lval_builtin_cmp(lenv *e, lval *a, const char *op) {
+    LASSERT_ARG_COUNT(op, a, /*count*/2);
+
+    int result;
+    if (!strcmp(op, "==")) result =  lval_eq(a->cell[0], a->cell[1]);
+    if (!strcmp(op, "!=")) result = !lval_eq(a->cell[0], a->cell[1]);
+
+    lval_free(a);
+    return lval_num(result);
+}
+
+lval *lval_builtin_eq(lenv *e, lval *a) { return lval_builtin_cmp(e, a, "=="); }
+lval *lval_builtin_ne(lenv *e, lval *a) { return lval_builtin_cmp(e, a, "!="); }
+
+bool lval_builtin_equals(lval *x, lval *y) {
+    if (x->type != y->type) return false;
+
+    switch (x->type) {
+        case LVAL_NUM: return x->num == y->num;
+
+        case LVAL_ERR: return !strcmp(x->err, y->err);
+        case LVAL_SYM: return !strcmp(x->sym, y->sym);
+
+        case LVAL_FUN:
+            if (x->builtin || y->builtin)
+                return x->builtin == y->builtin;
+            else
+                return lval_builtin_eq(x->formals, y->formals)
+                    && lval_builtin_eq(x->body, y->body);
+
+        case LVAL_QEXPR:
+        case LVAL_SEXPR:
+            if (x->cell_count != y->cell_count) return false;
+
+            for (int i = 0; i < x->cell_count; ++i)
+                if (!lval_builtin_eq(x->cell[i], y->cell[i]))
+                    return false;
+
+            return true;
+
+        default: assert(false);
+    }
+}
+
 lval *lval_builtin_list(lenv *e, lval *a) {
     a->type = LVAL_QEXPR;
     return a;
 }
 
 lval *lval_builtin_head(lenv *e, lval *a) {
-    LASSERT_ARG_COUNT("head", a, /*count*/ 1);
-    LASSERT_ARG_TYPE("head", a, /*index*/ 0, /*expected*/ LVAL_QEXPR);
-    LASSERT_ARG_NOT_EMPTY("head", a, /*index*/ 0);
+    LASSERT_ARG_COUNT("head", a, /*count*/1);
+    LASSERT_ARG_TYPE("head", a, /*index*/0, /*expected*/LVAL_QEXPR);
+    LASSERT_ARG_NOT_EMPTY("head", a, /*index*/0);
 
     // Take the first argument.
     lval *v = lval_take(a, 0);
@@ -524,9 +597,9 @@ lval *lval_builtin_head(lenv *e, lval *a) {
 }
 
 lval *lval_builtin_tail(lenv *e, lval *a) {
-    LASSERT_ARG_COUNT("tail", a, /*count*/ 1);
-    LASSERT_ARG_TYPE("tail", a, /*index*/ 0, /*expected*/ LVAL_QEXPR);
-    LASSERT_ARG_NOT_EMPTY("tail", a, /*index*/ 0);
+    LASSERT_ARG_COUNT("tail", a, /*count*/1);
+    LASSERT_ARG_TYPE("tail", a, /*index*/0, /*expected*/LVAL_QEXPR);
+    LASSERT_ARG_NOT_EMPTY("tail", a, /*index*/0);
 
     // Take the first argument.
     lval* v = lval_take(a, 0);
@@ -537,8 +610,8 @@ lval *lval_builtin_tail(lenv *e, lval *a) {
 }
 
 lval *lval_builtin_eval(lenv *e, lval *a) {
-    LASSERT_ARG_COUNT("eval", a, /*count*/ 1);
-    LASSERT_ARG_TYPE("eval", a, /*index*/ 0, /*expected*/ LVAL_QEXPR);
+    LASSERT_ARG_COUNT("eval", a, /*count*/1);
+    LASSERT_ARG_TYPE("eval", a, /*index*/0, /*expected*/LVAL_QEXPR);
 
     lval *x = lval_take(a, 0);
     x->type = LVAL_SEXPR;
@@ -547,7 +620,7 @@ lval *lval_builtin_eval(lenv *e, lval *a) {
 
 lval *lval_builtin_join(lenv *e, lval *a) {
     for (int i = 0; i < a->cell_count; ++i)
-        LASSERT_ARG_TYPE("join", a, /*index*/ i, /*expected*/ LVAL_QEXPR);
+        LASSERT_ARG_TYPE("join", a, /*index*/i, /*expected*/LVAL_QEXPR);
 
     lval *x = lval_pop(a, 0);
     while (a->cell_count) x = lval_join(x, lval_pop(a, 0));
@@ -557,7 +630,7 @@ lval *lval_builtin_join(lenv *e, lval *a) {
 }
 
 lval *lval_builtin_var(lenv *e, lval *a, const char *fun) {
-    LASSERT_ARG_TYPE(fun, a, /*index*/ 0, /*expected*/ LVAL_QEXPR);
+    LASSERT_ARG_TYPE(fun, a, /*index*/0, /*expected*/LVAL_QEXPR);
 
     // First argument is (expected to be) a symbol list.
     lval *syms = a->cell[0];
@@ -596,9 +669,9 @@ lval *lval_builtin_def(lenv *e, lval *a) { return lval_builtin_var(e, a, "def");
 lval *lval_builtin_put(lenv *e, lval *a) { return lval_builtin_var(e, a, "="); }
 
 lval *lval_builtin_lambda(lenv *e, lval *a) {
-    LASSERT_ARG_COUNT("\\", a, /*count*/ 2);
-    LASSERT_ARG_TYPE("\\", a, /*index*/ 0, /*expected*/ LVAL_QEXPR);
-    LASSERT_ARG_TYPE("\\", a, /*index*/ 1, /*expected*/ LVAL_QEXPR);
+    LASSERT_ARG_COUNT("\\", a, /*count*/2);
+    LASSERT_ARG_TYPE("\\", a, /*index*/0, /*expected*/LVAL_QEXPR);
+    LASSERT_ARG_TYPE("\\", a, /*index*/1, /*expected*/LVAL_QEXPR);
 
     // Check if the first Q-Expression only contains symbols.
     for (int i = 0; i < a->cell[0]->cell_count; ++i) {
