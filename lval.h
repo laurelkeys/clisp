@@ -99,7 +99,7 @@ lval *lval_join(lval *x, lval *y);
 lval *lval_call(lenv *e, lval *f, lval *a);
 
 // Indicates whether `x` is "equal to" `y`.
-bool lval_builtin_equals(lval *x, lval *y);
+bool lval_equals(lval *x, lval *y);
 
 // Creates a copy of an lval.
 lval *lval_copy(lval *v);
@@ -145,6 +145,10 @@ lval *lval_builtin_ge(lenv *e, lval *a);
 lval *lval_builtin_cmp(lenv *e, lval *a, const char *op);
 lval *lval_builtin_eq(lenv *e, lval *a);
 lval *lval_builtin_ne(lenv *e, lval *a);
+
+// Expects three arguments: a condition and two Q-Expressions; and evaluates
+// one of the expressions depending on whether or not the condition is true.
+lval *lval_builtin_if(lenv *e, lval *a);
 
 // Takes one or more arguments and returns a new Q-Expression containing the arguments.
 lval *lval_builtin_list(lenv *e, lval *a);
