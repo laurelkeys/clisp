@@ -16,7 +16,7 @@ typedef struct lenv lenv;
 
 // Valid types for a lval.
 typedef enum {
-    LVAL_NUM, LVAL_ERR,   LVAL_SYM,
+    LVAL_NUM, LVAL_ERR, LVAL_SYM, LVAL_STR,
     LVAL_FUN, LVAL_SEXPR, LVAL_QEXPR
 } LVAL_TYPE;
 
@@ -31,6 +31,7 @@ struct lval {
     long        num;
     char        *err;
     char        *sym;
+    char        *str;
 
     // Function.
     lbuiltin    builtin; // NULL for user-defined functions
@@ -58,6 +59,7 @@ struct lenv {
 lval *lval_num(const long num);
 lval *lval_err(const char *fmt, ...);
 lval *lval_sym(const char *sym);
+lval *lval_str(const char *str);
 lval *lval_fun(lbuiltin fun); // built-in function
 lval *lval_lambda(lval *formals, lval *body); // user-defined function
 lval *lval_sexpr(void);
@@ -120,10 +122,7 @@ void lenv_def(lenv *e, lval *k, lval *v);
 // Built-in functions.
 //
 
-// Calls the correct built-in function.
-lval *lval_builtin(lenv *e, lval *a, const char *fun);
-
-// Adds the built-in functions to the environment `e`.
+// Adds the built-in functions to environment `e`.
 void lenv_add_builtins(lenv *e);
 void lenv_add_builtin(lenv *e, const char *name, lbuiltin fun);
 
@@ -182,6 +181,7 @@ lval *lval_eval(lenv *e, lval *v);
 //
 
 lval *lval_read_num(const mpc_ast_t *t);
+lval *lval_read_str(const mpc_ast_t *t);
 lval *lval_read(const mpc_ast_t *t);
 
 //
@@ -190,6 +190,7 @@ lval *lval_read(const mpc_ast_t *t);
 
 void lval_print_lambda(const lval *v);
 void lval_print_expr(const lval *v, const char open, const char close);
+void lval_print_str(const lval *v);
 void lval_print(const lval *v);
 void lval_println(const lval *v);
 

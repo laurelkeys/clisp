@@ -38,6 +38,14 @@ lval *lval_sym(const char *sym) {
     return v;
 }
 
+lval *lval_str(const char *str) {
+    lval *v = malloc(sizeof(lval));
+    v->type = LVAL_STR;
+    v->str = malloc(strlen(str) + 1);
+    strcpy(v->str, str);
+    return v;
+}
+
 lval *lval_fun(lbuiltin fun) {
     lval *v = malloc(sizeof(lval));
     v->type = LVAL_FUN;
@@ -90,6 +98,7 @@ void lval_free(lval *v) {
 
         case LVAL_ERR: free(v->err); break;
         case LVAL_SYM: free(v->sym); break;
+        case LVAL_STR: free(v->str); break;
 
         case LVAL_FUN:
             if (!v->builtin) {
@@ -135,6 +144,7 @@ char *lval_type_name(LVAL_TYPE t) {
         case LVAL_NUM:   return "Number";
         case LVAL_ERR:   return "Error";
         case LVAL_SYM:   return "Symbol";
+        case LVAL_STR:   return "String";
         case LVAL_FUN:   return "Function";
         case LVAL_SEXPR: return "S-Expression";
         case LVAL_QEXPR: return "Q-Expression";
@@ -305,6 +315,11 @@ lval *lval_copy(lval *v) {
             strcpy(x->sym, v->sym);
             break;
 
+        case LVAL_STR:
+            x->str = malloc(strlen(v->str) + 1);
+            strcpy(x->str, v->str);
+            break;
+
         case LVAL_FUN:
             if (v->builtin) {
                 x->builtin = v->builtin;
@@ -400,21 +415,6 @@ void lenv_def(lenv *e, lval *k, lval *v) {
 // Built-in functions.
 //
 
-lval *lval_builtin(lenv *e, lval *a, const char *fun) {
-    if (!strcmp("list", fun)) return lval_builtin_list(e, a);
-    if (!strcmp("head", fun)) return lval_builtin_head(e, a);
-    if (!strcmp("tail", fun)) return lval_builtin_tail(e, a);
-    if (!strcmp("join", fun)) return lval_builtin_join(e, a);
-    if (!strcmp("eval", fun)) return lval_builtin_eval(e, a);
-    if (strstr("+-/*",  fun)) return lval_builtin_op(e, a, fun);
-    if (strstr("<=>=",  fun)) return lval_builtin_ord(e, a, fun); // < > <= >=
-    if (strstr("!==",   fun)) return lval_builtin_cmp(e, a, fun); // == !=
-    if (!strcmp("if",   fun)) return lval_builtin_if(e, a);
-
-    lval_free(a);
-    return lval_err("unknown function `%s`", fun);
-}
-
 #define LASSERT(args, cond, err_fmt, ...)             \
     if (!(cond)) {                                    \
         lval *err = lval_err(err_fmt, ##__VA_ARGS__); \
@@ -425,19 +425,19 @@ lval *lval_builtin(lenv *e, lval *a, const char *fun) {
 #define LASSERT_ARG_TYPE(fun, args, index, expected)                                       \
     LASSERT(                                                                               \
         args, (args)->cell[index]->type == expected,                                       \
-        "function '%s' passed incorrect type for argument `%i`. Got `%s`, expected `%s`.", \
+        "function '%s' passed incorrect type for argument %i. Got `%s`, expected `%s`.", \
         fun, index, lval_type_name((args)->cell[index]->type), lval_type_name(expected))
 
 #define LASSERT_ARG_COUNT(fun, args, count)                                             \
     LASSERT(                                                                            \
         args, (args)->cell_count == count,                                              \
-        "function '%s' passed incorrect number of arguments. Got `%i`, expected `%i`.", \
+        "function '%s' passed incorrect number of arguments. Got %i, expected %i.", \
         fun, (args)->cell_count, count)
 
 #define LASSERT_ARG_NOT_EMPTY(fun, args, index)         \
     LASSERT(                                            \
         args, (args)->cell[index]->cell_count != 0,     \
-        "function '%s' passed `{}` for argument `%i`.", \
+        "function '%s' passed `{}` for argument %i.", \
         fun, index)
 
 void lenv_add_builtins(lenv *e) {
@@ -545,6 +545,7 @@ bool lval_equals(lval *x, lval *y) {
 
         case LVAL_ERR: return !strcmp(x->err, y->err);
         case LVAL_SYM: return !strcmp(x->sym, y->sym);
+        case LVAL_STR: return !strcmp(x->str, y->str);
 
         case LVAL_FUN:
             if (x->builtin || y->builtin)
@@ -776,10 +777,27 @@ lval *lval_read_num(const mpc_ast_t *t) {
         : lval_err("invalid number");
 }
 
+lval *lval_read_str(const mpc_ast_t *t) {
+    // Remove the trailing quote character.
+    t->contents[strlen(t->contents) - 1] = '\0';
+
+    // Ignore the leading quote character.
+    char *unescaped_str = malloc(strlen(t->contents + 1) + 1);
+    strcpy(unescaped_str, t->contents + 1);
+
+    // Unescaped special characters and construct a new lval.
+    unescaped_str = mpcf_unescape(unescaped_str);
+    lval *str = lval_str(unescaped_str);
+
+    free(unescaped_str);
+    return str;
+}
+
 lval *lval_read(const mpc_ast_t *t) {
     // If Symbol or Number, convert to it and return.
     if (strstr(t->tag, "number")) return lval_read_num(t);
     if (strstr(t->tag, "symbol")) return lval_sym(t->contents);
+    if (strstr(t->tag, "string")) return lval_read_str(t);
 
     // If root (>) or sexpr, then create an empty list.
     lval *x = NULL;
@@ -823,11 +841,23 @@ void lval_print_expr(const lval *v, const char open, const char close) {
     putchar(close);
 }
 
+void lval_print_str(const lval *v) {
+    char *escaped_str = malloc(strlen(v->str) + 1);
+    strcpy(escaped_str, v->str);
+
+    // Escape special characters and print it between quotes.
+    escaped_str = mpcf_escape(escaped_str);
+    printf("\"%s\"", escaped_str);
+
+    free(escaped_str);
+}
+
 void lval_print(const lval *v) {
     switch (v->type) {
         case LVAL_NUM:      printf("%li", v->num);        break;
         case LVAL_ERR:      printf("Error: %s", v->err);  break;
         case LVAL_SYM:      printf("%s", v->sym);         break;
+        case LVAL_STR:      lval_print_str(v);            break;
         case LVAL_FUN:
             if (v->builtin) printf("<builtin>");
             else            lval_print_lambda(v);
