@@ -7,6 +7,7 @@
 #include "mpc.h"
 
 #include "lval.h"
+mpc_parser_t *Lispy;
 
 #ifdef _WIN32
 #include <string.h>
@@ -46,7 +47,7 @@ int main(int argc, char *argv[]) {
     mpc_parser_t *Sexpr   = mpc_new("sexpr"); // S(ymbol)-Expression
     mpc_parser_t *Qexpr   = mpc_new("qexpr"); // Q(uoted)-Expression
     mpc_parser_t *Expr    = mpc_new("expr");
-    mpc_parser_t *Lispy   = mpc_new("lispy");
+    Lispy                 = mpc_new("lispy");
 
     #define PARSERS_COMMA_SEPARATED \
         Number, Symbol, String, Comment, Sexpr, Qexpr, Expr, Lispy
@@ -71,40 +72,40 @@ int main(int argc, char *argv[]) {
     lenv *e = lenv_new();
     lenv_add_builtins(e);
 
-    puts("Lispy Version 0.6.6.6");
-    puts("Press Ctrl+C to exit\n");
-
     if (argc >= 2) {
         for (int i = 1; i < argc; ++i) {
-            // Create an argument list with a single argument.
+            // Create an argument list with a single argument
+            // (the filename), then load and evaluate its contents.
             lval *args = lval_add(lval_sexpr(), lval_str(argv[i]));
-
-            // Load and evaluate the given file.
-            lval *x = lval_builtin_load(e, args, Lispy);
+            lval *x = lval_builtin_load(e, args);
 
             if (x->type == LVAL_ERR) lval_println(x);
             lval_free(x);
         }
-    }
+    } else {
+        // Execute the REPL.
+        puts("Lispy Version 0.0.0.0");
+        puts("Press Ctrl+C to exit\n");
 
-    while (true) {
-        char *input = readline("lispy> ");
-        add_history(input);
+        while (true) {
+            char *input = readline("lispy> ");
+            add_history(input);
 
-        // Parse the user input.
-        mpc_result_t r;
-        if (mpc_parse("<stdin>", input, Lispy, &r)) {
-            lval *x = lval_eval(e, lval_read(r.output));
-            lval_println(x);
+            // Parse the user input.
+            mpc_result_t r;
+            if (mpc_parse("<stdin>", input, Lispy, &r)) {
+                lval *x = lval_eval(e, lval_read(r.output));
+                lval_println(x);
 
-            lval_free(x);
-            mpc_ast_delete(r.output);
-        } else {
-            mpc_err_print(r.error);
-            mpc_err_delete(r.error);
+                lval_free(x);
+                mpc_ast_delete(r.output);
+            } else {
+                mpc_err_print(r.error);
+                mpc_err_delete(r.error);
+            }
+
+            free(input);
         }
-
-        free(input);
     }
 
     lenv_free(e);

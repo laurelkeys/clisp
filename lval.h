@@ -5,6 +5,8 @@
 
 #include "mpc.h"
 
+extern mpc_parser_t *Lispy;
+
 // Forward declarations.
 struct lval;
 struct lenv;
@@ -170,7 +172,7 @@ lval *lval_builtin_put(lenv *e, lval *a); // local assignment
 lval *lval_builtin_lambda(lenv *e, lval *a);
 
 // Loads and evaluates a file, given its name in `a->cell[0]->str`.
-lval *lval_builtin_load(lenv *e, lval *a, mpc_parser_t *Lispy_ref);
+lval *lval_builtin_load(lenv *e, lval *a);
 
 // Prints the arguments given in `a->cell`, separated by whitespace,
 // with a trailing newline. Returns an empty S-Expression.
