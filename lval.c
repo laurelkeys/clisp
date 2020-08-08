@@ -441,30 +441,41 @@ void lenv_def(lenv *e, lval *k, lval *v) {
         fun, index)
 
 void lenv_add_builtins(lenv *e) {
-    lenv_add_builtin(e, "\\", lval_builtin_lambda); // user-defined function
-    lenv_add_builtin(e, "def", lval_builtin_def); // user-(globally-)defined variable
-    lenv_add_builtin(e, "=", lval_builtin_put); // user-(locally-)defined variable
+    // User-defined function.
+    lenv_add_builtin(e, "\\", lval_builtin_lambda);
 
+    // User-defined variable.
+    lenv_add_builtin(e, "def", lval_builtin_def); // global scope
+    lenv_add_builtin(e, "=", lval_builtin_put); // local scope
+
+    // List-related functions.
     lenv_add_builtin(e, "list", lval_builtin_list);
     lenv_add_builtin(e, "head", lval_builtin_head);
     lenv_add_builtin(e, "tail", lval_builtin_tail);
     lenv_add_builtin(e, "eval", lval_builtin_eval);
     lenv_add_builtin(e, "join", lval_builtin_join);
 
+    // Number-related functions.
     lenv_add_builtin(e, "+", lval_builtin_add);
     lenv_add_builtin(e, "-", lval_builtin_sub);
     lenv_add_builtin(e, "*", lval_builtin_mul);
     lenv_add_builtin(e, "/", lval_builtin_div);
-
-    lenv_add_builtin(e, "<=", lval_builtin_le);
-    lenv_add_builtin(e, ">=", lval_builtin_ge);
     lenv_add_builtin(e, "<", lval_builtin_lt);
     lenv_add_builtin(e, ">", lval_builtin_gt);
+    lenv_add_builtin(e, "<=", lval_builtin_le);
+    lenv_add_builtin(e, ">=", lval_builtin_ge);
 
+    // Type generic comparison.
     lenv_add_builtin(e, "==", lval_builtin_eq);
     lenv_add_builtin(e, "!=", lval_builtin_ne);
 
+    // Conditional evaluation of Q-Expressions.
     lenv_add_builtin(e, "if", lval_builtin_if);
+
+    // String-related functions.
+    lenv_add_builtin(e, "load", lval_builtin_load);
+    lenv_add_builtin(e, "print", lval_builtin_print);
+    lenv_add_builtin(e, "error", lval_builtin_error);
 }
 
 void lenv_add_builtin(lenv *e, const char *name, lbuiltin fun) {
@@ -523,8 +534,8 @@ lval *lval_builtin_ord(lenv *e, lval *a, const char *op) {
     LASSERT_ARG_TYPE(op, a, /*index*/1, /*expected*/LVAL_NUM);
 
     int result;
-    if (!strcmp(op, "<")) result = a->cell[0]->num < a->cell[1]->num;
-    if (!strcmp(op, ">")) result = a->cell[0]->num > a->cell[1]->num;
+    if (!strcmp(op, "<"))  result = a->cell[0]->num < a->cell[1]->num;
+    if (!strcmp(op, ">"))  result = a->cell[0]->num > a->cell[1]->num;
     if (!strcmp(op, "<=")) result = a->cell[0]->num <= a->cell[1]->num;
     if (!strcmp(op, ">=")) result = a->cell[0]->num >= a->cell[1]->num;
 
@@ -712,6 +723,63 @@ lval *lval_builtin_lambda(lenv *e, lval *a) {
     return lval_lambda(formals, body);
 }
 
+lval *lval_builtin_load(lenv *e, lval *a, mpc_parser_t *Lispy_ref) {
+    LASSERT_ARG_COUNT("load", a, /*count*/1);
+    LASSERT_ARG_TYPE("load", a, /*index*/0, /*expected*/LVAL_STR);
+
+    // Parse the file given by string name.
+    mpc_result_t r;
+    if (mpc_parse_contents(a->cell[0]->str, Lispy_ref, &r)) {
+        // Read contents.
+        lval *expr = lval_read(r.output);
+        mpc_ast_delete(r.output);
+
+        // Evaluate each expression (and print possible errors).
+        while (expr->cell_count) {
+            lval *x = lval_eval(e, lval_pop(expr, 0));
+            if (x->type == LVAL_ERR) lval_println(x);
+            lval_free(x);
+        }
+
+        // Cleanup and return an empty list.
+        lval_free(expr);
+        lval_free(a);
+        return lval_sexpr();
+    }
+
+    // Get parse error as string.
+    char *err_msg = mpc_err_string(r.error);
+    mpc_err_delete(r.error);
+
+    lval *err = lval_err("Could not load Library %s", err_msg);
+
+    // Cleanup and return an error.
+    free(err_msg);
+    lval_free(a);
+    return err;
+}
+
+lval *lval_builtin_print(lenv *e, lval *a) {
+    for (int i = 0; i < a->cell_count; ++i) {
+        lval_print(a->cell[i]);
+        putchar(' ');
+    }
+    putchar('\n');
+
+    lval_free(a);
+    return lval_sexpr();
+}
+
+lval *lval_builtin_error(lenv *e, lval *a) {
+    LASSERT_ARG_COUNT("error", a, /*count*/1);
+    LASSERT_ARG_TYPE("error", a, /*index*/0, /*expected*/LVAL_STR);
+
+    lval *err = lval_err(a->cell[0]->str);
+
+    lval_free(a);
+    return err;
+}
+
 //
 // Eval.
 //
@@ -812,6 +880,7 @@ lval *lval_read(const mpc_ast_t *t) {
         if (!strcmp(t->children[i]->contents, "{")) continue;
         if (!strcmp(t->children[i]->contents, "}")) continue;
         if (!strcmp(t->children[i]->tag,  "regex")) continue;
+        if (strstr(t->children[i]->tag, "comment")) continue;
         x = lval_add(x, lval_read(t->children[i]));
     }
 

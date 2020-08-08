@@ -36,31 +36,35 @@ void add_history(char *unused) {}
 #include <editline/history.h>
 #endif
 
-int main(void) {
-    mpc_parser_t *Number = mpc_new("number");
-    mpc_parser_t *Symbol = mpc_new("symbol"); // a-z A-Z 0-9 _+-*/\=<>!&
-    mpc_parser_t *String = mpc_new("string");
-    mpc_parser_t *Sexpr  = mpc_new("sexpr"); // S(ymbol)-Expression
-    mpc_parser_t *Qexpr  = mpc_new("qexpr"); // Q(uoted)-Expression
-    mpc_parser_t *Expr   = mpc_new("expr");
-    mpc_parser_t *Lispy  = mpc_new("lispy");
+int main(int argc, char *argv[]) {
+    #define PARSERS_COUNT 8
 
-    #define N_OF_PARSERS 7
-    #define COMMA_SEPARATED_PARSERS \
-        Number, Symbol, String, Sexpr, Qexpr, Expr, Lispy
+    mpc_parser_t *Number  = mpc_new("number");
+    mpc_parser_t *Symbol  = mpc_new("symbol"); // a-z A-Z 0-9 _+-*/\=<>!&
+    mpc_parser_t *String  = mpc_new("string");
+    mpc_parser_t *Comment = mpc_new("comment");
+    mpc_parser_t *Sexpr   = mpc_new("sexpr"); // S(ymbol)-Expression
+    mpc_parser_t *Qexpr   = mpc_new("qexpr"); // Q(uoted)-Expression
+    mpc_parser_t *Expr    = mpc_new("expr");
+    mpc_parser_t *Lispy   = mpc_new("lispy");
+
+    #define PARSERS_COMMA_SEPARATED \
+        Number, Symbol, String, Comment, Sexpr, Qexpr, Expr, Lispy
 
     mpca_lang(MPCA_LANG_DEFAULT,
-        "                                                      \
-            number : /-?[0-9]+/ ;                              \
-            symbol : /[a-zA-Z0-9_+\\-*\\/\\\\=<>!&]+/ ;        \
-            string : /\"(\\\\.|[^\"])*\"/ ;                    \
-            sexpr  : '(' <expr>* ')' ;                         \
-            qexpr  : '{' <expr>* '}' ;                         \
-            expr   : <number> | <symbol> | <string>            \
-                   | <sexpr> | <qexpr> ;                       \
-            lispy  : /^/ <expr>* /$/ ;                         \
+        "                                                       \
+            number  : /-?[0-9]+/ ;                              \
+            symbol  : /[a-zA-Z0-9_+\\-*\\/\\\\=<>!&]+/ ;        \
+            string  : /\"(\\\\.|[^\"])*\"/ ;                    \
+            comment : /;[^\\r\\n]*/ ;                           \
+            sexpr   : '(' <expr>* ')' ;                         \
+            qexpr   : '{' <expr>* '}' ;                         \
+            expr    : <number> | <symbol>                       \
+                    | <string> | <comment>                      \
+                    | <sexpr>  | <qexpr> ;                      \
+            lispy   : /^/ <expr>* /$/ ;                         \
         ",
-        COMMA_SEPARATED_PARSERS
+        PARSERS_COMMA_SEPARATED
     );
 
     // Create an environment with built-in functions.
@@ -69,6 +73,19 @@ int main(void) {
 
     puts("Lispy Version 0.6.6.6");
     puts("Press Ctrl+C to exit\n");
+
+    if (argc >= 2) {
+        for (int i = 1; i < argc; ++i) {
+            // Create an argument list with a single argument.
+            lval *args = lval_add(lval_sexpr(), lval_str(argv[i]));
+
+            // Load and evaluate the given file.
+            lval *x = lval_builtin_load(e, args, Lispy);
+
+            if (x->type == LVAL_ERR) lval_println(x);
+            lval_free(x);
+        }
+    }
 
     while (true) {
         char *input = readline("lispy> ");
@@ -93,7 +110,7 @@ int main(void) {
     lenv_free(e);
 
     // Undefine and delete parsers.
-    mpc_cleanup(N_OF_PARSERS, COMMA_SEPARATED_PARSERS);
+    mpc_cleanup(PARSERS_COUNT, PARSERS_COMMA_SEPARATED);
 
     return 0;
 }

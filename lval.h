@@ -169,6 +169,16 @@ lval *lval_builtin_put(lenv *e, lval *a); // local assignment
 // Adds a user-defined function to the environment `e`.
 lval *lval_builtin_lambda(lenv *e, lval *a);
 
+// Loads and evaluates a file, given its name in `a->cell[0]->str`.
+lval *lval_builtin_load(lenv *e, lval *a, mpc_parser_t *Lispy_ref);
+
+// Prints the arguments given in `a->cell`, separated by whitespace,
+// with a trailing newline. Returns an empty S-Expression.
+lval *lval_builtin_print(lenv *e, lval *a);
+
+// Returns an LVAL_ERR with the given error message `a->cell[0]->str`.
+lval *lval_builtin_error(lenv *e, lval *a);
+
 //
 // Eval.
 //
