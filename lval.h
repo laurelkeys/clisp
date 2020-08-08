@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 
-#include "mpc.h"
+#include "ext/mpc.h"
 
 extern mpc_parser_t *Lispy;
 

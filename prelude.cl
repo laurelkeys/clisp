@@ -1,6 +1,8 @@
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;   Lispy Standard Prelude
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;      Lispy Standard Prelude      ;;;
+;;; http://www.buildyourownlisp.com/ ;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;
 ;;; Atoms
@@ -43,7 +45,7 @@
 ;;; Logical functions
 ;;;
 
-(fun {not x}   {- 1 x}) ; FIXME
+(fun {not x}   {- 1 x})
 (fun {or  x y} {+ x y})
 (fun {and x y} {* x y})
 
